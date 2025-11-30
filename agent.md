@@ -23,7 +23,8 @@
 - `--ulimit memlock=-1` - 記憶體鎖定
 - `--ulimit stack=67108864` - Stack 大小
 - `-e TIKTOKEN_ENCODINGS_BASE=/etc/encodings` - tiktoken 路徑
-- `-v /tmp/encodings:/etc/encodings:ro` - 編碼檔案掛載
+- `-v /vllm/encodings:/etc/encodings:ro` - 編碼檔案掛載
+- `-v /vllm/huggingface:/root/.cache/huggingface` - 模型快取掛載
 
 **禁止**:
 - 不要省略 `--ipc=host`，會導致 tensor parallelism 失敗
@@ -43,17 +44,19 @@
 ### 3. 前置作業規範
 
 **啟動前必須確認**:
-1. `/tmp/encodings/o200k_base.tiktoken` 存在
-2. `/tmp/encodings/cl100k_base.tiktoken` 存在
-3. `$HF_TOKEN` 環境變數已設定
-4. Docker 映像已拉取
+1. `/vllm/encodings/o200k_base.tiktoken` 存在
+2. `/vllm/encodings/cl100k_base.tiktoken` 存在
+3. `/vllm/huggingface/` 目錄存在
+4. `$HF_TOKEN` 環境變數已設定
+5. Docker 映像已拉取
 
 **若編碼檔案不存在，必須先下載**:
 ```bash
-mkdir -p /tmp/encodings
-curl -L -o /tmp/encodings/o200k_base.tiktoken \
+sudo mkdir -p /vllm/encodings /vllm/huggingface
+sudo chown -R $USER:$USER /vllm
+curl -L -o /vllm/encodings/o200k_base.tiktoken \
   "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
-curl -L -o /tmp/encodings/cl100k_base.tiktoken \
+curl -L -o /vllm/encodings/cl100k_base.tiktoken \
   "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 ```
 
