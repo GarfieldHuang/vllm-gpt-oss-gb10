@@ -1,12 +1,21 @@
-# ARM64 + GB10 部署 vLLM 運行 gpt-oss-120b
+# ARM64 + GB10 部署 vLLM 運行大型語言模型
 
-本專案提供在 NVIDIA Grace Blackwell (GB10) 上使用 vLLM 部署 OpenAI gpt-oss-120b 模型的完整指南。
+本專案提供在 NVIDIA Grace Blackwell (GB10) 上使用 vLLM 部署大型語言模型的完整指南。
+
+## 支援的模型
+
+| 模型 | 參數量 | 量化 | 記憶體需求 | 說明 |
+|------|--------|------|------------|------|
+| [gpt-oss-120b](#gpt-oss-120b) | 120B | MXFP4 | ~66 GiB | OpenAI 開源推理模型 |
+| [Gemma 3 27B](#gemma-3-27b) | 27B | BF16 | ~54 GiB | Google 多模態模型 |
 
 ## 目錄
 - [硬體需求](#硬體需求)
 - [軟體需求](#軟體需求)
 - [前置準備](#前置準備)
-- [啟動服務](#啟動服務)
+- [模型部署](#模型部署)
+  - [gpt-oss-120b](#gpt-oss-120b)
+  - [Gemma 3 27B](#gemma-3-27b)
 - [Docker 參數詳解](#docker-參數詳解)
 - [vLLM 參數詳解](#vllm-參數詳解)
 - [API 使用範例](#api-使用範例)
@@ -97,9 +106,13 @@ docker pull nvcr.io/nvidia/vllm:25.09-py3
 
 ---
 
-## 啟動服務
+## 模型部署
 
-### 完整啟動指令
+### gpt-oss-120b
+
+OpenAI 開源的 120B 參數推理模型，支援 tool use 和 reasoning。
+
+#### 啟動指令
 
 ```bash
 docker run -d \
@@ -116,17 +129,120 @@ docker run -d \
   nvcr.io/nvidia/vllm:25.09-py3 \
   vllm serve openai/gpt-oss-120b \
   --quantization mxfp4 \
-  --gpu-memory-utilization 0.85 \
+  --gpu-memory-utilization 0.80 \
   --max-model-len 32768 \
   --served-model-name gpt-oss-120b
 ```
 
-### 等待服務就緒
+#### 模型資訊
 
-模型載入約需 **7-8 分鐘**，可透過以下方式監控：
+| 項目 | 數值 |
+|------|------|
+| 模型 ID | `openai/gpt-oss-120b` |
+| 參數量 | 120B |
+| 量化 | MXFP4 (4-bit) |
+| 記憶體需求 | ~66 GiB |
+| 載入時間 | ~7-8 分鐘 |
+| 最大序列長度 | 32,768 tokens |
+
+> ⚠️ **注意**: gpt-oss-120b 需要預先下載 tiktoken 編碼檔案，請參考[前置準備](#1-下載-tiktoken-編碼檔案)。
+
+---
+
+### Gemma 3 27B
+
+Google 的 Gemma 3 27B Instruct 模型，支援多模態 (文字 + 圖片)。
+
+#### 啟動指令
 
 ```bash
-# 查看日誌
+docker run -d \
+  --gpus all \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  -p 8000:8000 \
+  -e HF_TOKEN=$HF_TOKEN \
+  -v ~/vllm/huggingface:/root/.cache/huggingface \
+  --name vllm-gemma3 \
+  nvcr.io/nvidia/vllm:25.09-py3 \
+  vllm serve google/gemma-3-27b-it \
+  --gpu-memory-utilization 0.90 \
+  --max-model-len 8192 \
+  --served-model-name gemma-3-27b
+```
+
+#### 模型資訊
+
+| 項目 | 數值 |
+|------|------|
+| 模型 ID | `google/gemma-3-27b-it` |
+| 參數量 | 27B |
+| 精度 | BF16 (原生) |
+| 記憶體需求 | ~54 GiB |
+| 載入時間 | ~3-4 分鐘 |
+| 最大序列長度 | 8,192 tokens (可調整至 128K) |
+
+#### 使用 MXFP4 量化 (減少記憶體)
+
+如果需要更多 KV cache 空間，可啟用 MXFP4 量化：
+
+```bash
+docker run -d \
+  --gpus all \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  -p 8000:8000 \
+  -e HF_TOKEN=$HF_TOKEN \
+  -v ~/vllm/huggingface:/root/.cache/huggingface \
+  --name vllm-gemma3 \
+  nvcr.io/nvidia/vllm:25.09-py3 \
+  vllm serve google/gemma-3-27b-it \
+  --quantization mxfp4 \
+  --gpu-memory-utilization 0.90 \
+  --max-model-len 32768 \
+  --served-model-name gemma-3-27b
+```
+
+量化後記憶體需求降至 ~14 GiB，可支援更長的序列長度。
+
+#### 測試 Gemma 3
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma-3-27b",
+    "messages": [
+      {"role": "user", "content": "用繁體中文解釋什麼是量子糾纏"}
+    ],
+    "max_tokens": 500
+  }' | jq .
+```
+
+---
+
+### 切換模型
+
+同一時間只能運行一個模型。切換模型時需先停止現有容器：
+
+```bash
+# 停止並移除現有容器
+docker rm -f vllm-gpt-oss 2>/dev/null
+docker rm -f vllm-gemma3 2>/dev/null
+
+# 然後啟動想要的模型
+```
+
+---
+
+## 等待服務就緒
+
+模型載入需要一段時間，可透過以下方式監控：
+
+```bash
+# 查看日誌 (替換為實際容器名稱)
 docker logs -f vllm-gpt-oss
 
 # 或輪詢健康檢查端點
@@ -192,7 +308,7 @@ echo "服務已就緒!"
 
 | 參數 | 說明 |
 |------|------|
-| `--gpu-memory-utilization 0.85` | GPU 記憶體使用率上限 (0.0-1.0)。設為 0.85 表示使用 85% 的 GPU 記憶體，預留 15% 給系統和 KV cache 動態分配。若遇 OOM 可降低此值 |
+| `--gpu-memory-utilization 0.80` | GPU 記憶體使用率上限 (0.0-1.0)。設為 0.80 表示使用 80% 的 GPU 記憶體，預留 20% 給系統和 KV cache 動態分配。若遇 OOM 可降低此值 |
 | `--max-model-len 32768` | 最大序列長度 (輸入 + 輸出 tokens)。gpt-oss-120b 支援最高 200K，但受限於 GB10 記憶體，設為 32K 是較平衡的選擇 |
 
 ### 服務設定
@@ -383,61 +499,74 @@ curl: (7) Failed to connect to localhost port 8000
 
 ## 容器管理
 
+> **注意**: 以下指令中的 `<container>` 請替換為實際容器名稱：
+> - gpt-oss-120b: `vllm-gpt-oss`
+> - Gemma 3 27B: `vllm-gemma3`
+
 ### 停止 vLLM 服務
 
 ```bash
 # 方法 1: 優雅停止 (建議)
 # 會等待目前的請求處理完成後再停止，預設等待 10 秒
-docker stop vllm-gpt-oss
+docker stop <container>
 
 # 方法 2: 指定等待時間 (秒)
 # 適合有長時間運行請求的情況
-docker stop -t 30 vllm-gpt-oss
+docker stop -t 30 <container>
 
 # 方法 3: 強制停止 (不建議)
 # 立即終止，不等待請求完成
-docker kill vllm-gpt-oss
+docker kill <container>
 ```
 
 ### 完全移除服務
 
 ```bash
 # 停止並移除容器 (一行完成)
-docker stop vllm-gpt-oss && docker rm vllm-gpt-oss
+docker stop <container> && docker rm <container>
 
 # 如果容器已經停止，直接移除
-docker rm vllm-gpt-oss
+docker rm <container>
 
 # 強制移除 (即使正在運行)
-docker rm -f vllm-gpt-oss
+docker rm -f <container>
+```
+
+### 切換模型
+
+由於 GPU 記憶體限制，一次只能運行一個模型。切換模型時：
+
+```bash
+# 1. 停止並移除當前模型容器
+docker rm -f vllm-gpt-oss  # 或 vllm-gemma3
+
+# 2. 啟動另一個模型 (複製對應的 docker run 指令)
+# 參考上方「啟動伺服器」章節的完整指令
 ```
 
 ### 其他常用指令
 
 ```bash
-# 查看容器狀態
-docker ps | grep vllm-gpt-oss
+# 查看所有 vLLM 容器狀態
+docker ps -a | grep vllm
 
-# 查看所有容器 (包含已停止的)
-docker ps -a | grep vllm-gpt-oss
-
-# 重新啟動已停止的容器
-docker start vllm-gpt-oss
+# 重新啟動已停止的容器 (會使用原本的參數)
+docker start <container>
 
 # 重啟容器 (停止後立即啟動)
-docker restart vllm-gpt-oss
+docker restart <container>
 
 # 查看即時日誌
-docker logs -f vllm-gpt-oss
+docker logs -f <container>
 
 # 查看最後 100 行日誌
-docker logs --tail 100 vllm-gpt-oss
+docker logs --tail 100 <container>
 
 # 進入容器 shell
-docker exec -it vllm-gpt-oss bash
+docker exec -it <container> bash
 
 # 查看容器資源使用情況
-docker stats vllm-gpt-oss
+docker stats <container>
 ```
 
 ---
