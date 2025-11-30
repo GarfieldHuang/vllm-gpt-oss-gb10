@@ -49,13 +49,13 @@ export HF_TOKEN="your_huggingface_token"
 
 | 項目 | 路徑 | 說明 |
 |------|------|------|
-| **模型快取** | `/vllm/huggingface/hub/models--openai--gpt-oss-120b/` | Hugging Face 下載的模型權重，約 240GB (FP16 格式) |
-| **tiktoken 編碼檔案** | `/vllm/encodings/` | tokenizer 所需的編碼檔案 |
-| - o200k_base.tiktoken | `/vllm/encodings/o200k_base.tiktoken` | 主要編碼檔案 (3.6 MB)，gpt-oss 使用 |
-| - cl100k_base.tiktoken | `/vllm/encodings/cl100k_base.tiktoken` | 備用編碼檔案 (1.7 MB) |
+| **模型快取** | `~/vllm/huggingface/hub/models--openai--gpt-oss-120b/` | Hugging Face 下載的模型權重，約 240GB (FP16 格式) |
+| **tiktoken 編碼檔案** | `~/vllm/encodings/` | tokenizer 所需的編碼檔案 |
+| - o200k_base.tiktoken | `~/vllm/encodings/o200k_base.tiktoken` | 主要編碼檔案 (3.6 MB)，gpt-oss 使用 |
+| - cl100k_base.tiktoken | `~/vllm/encodings/cl100k_base.tiktoken` | 備用編碼檔案 (1.7 MB) |
 | **vLLM 快取** | `~/.cache/vllm/` | torch.compile 和 CUDA graph 快取 |
 
-> **注意**: 模型權重在首次啟動時會自動下載到 `/vllm/huggingface/`，後續啟動會直接使用快取。
+> **注意**: 模型權重在首次啟動時會自動下載到 `~/vllm/huggingface/`，後續啟動會直接使用快取。
 
 ---
 
@@ -67,19 +67,18 @@ gpt-oss 模型使用 `openai_harmony` tokenizer，需要 tiktoken 編碼檔案�
 
 ```bash
 # 建立編碼檔案目錄
-sudo mkdir -p /vllm/encodings
-sudo chown -R $USER:$USER /vllm
+mkdir -p ~/vllm/encodings ~/vllm/huggingface
 
 # 下載 o200k_base 編碼 (gpt-oss 主要使用)
-curl -L -o /vllm/encodings/o200k_base.tiktoken \
+curl -L -o ~/vllm/encodings/o200k_base.tiktoken \
   "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
 
 # 下載 cl100k_base 編碼 (備用)
-curl -L -o /vllm/encodings/cl100k_base.tiktoken \
+curl -L -o ~/vllm/encodings/cl100k_base.tiktoken \
   "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 
 # 驗證檔案
-ls -la /vllm/encodings/
+ls -la ~/vllm/encodings/
 # 預期輸出:
 # o200k_base.tiktoken  約 3.6 MB
 # cl100k_base.tiktoken 約 1.7 MB
@@ -111,8 +110,8 @@ docker run -d \
   -p 8000:8000 \
   -e HF_TOKEN=$HF_TOKEN \
   -e TIKTOKEN_ENCODINGS_BASE=/etc/encodings \
-  -v /vllm/huggingface:/root/.cache/huggingface \
-  -v /vllm/encodings:/etc/encodings:ro \
+  -v ~/vllm/huggingface:/root/.cache/huggingface \
+  -v ~/vllm/encodings:/etc/encodings:ro \
   --name vllm-gpt-oss \
   nvcr.io/nvidia/vllm:25.09-py3 \
   vllm serve openai/gpt-oss-120b \
@@ -175,8 +174,8 @@ echo "服務已就緒!"
 
 | 參數 | 說明 |
 |------|------|
-| `-v /vllm/huggingface:/root/.cache/huggingface` | 掛載 Hugging Face 快取目錄。模型權重約 240GB (FP16)，掛載後可避免每次重新下載 |
-| `-v /vllm/encodings:/etc/encodings:ro` | 掛載 tiktoken 編碼檔案。`:ro` 表示唯讀掛載，提高安全性 |
+| `-v ~/vllm/huggingface:/root/.cache/huggingface` | 掛載 Hugging Face 快取目錄。模型權重約 240GB (FP16)，掛載後可避免每次重新下載 |
+| `-v ~/vllm/encodings:/etc/encodings:ro` | 掛載 tiktoken 編碼檔案。`:ro` 表示唯讀掛載，提高安全性 |
 
 ---
 
@@ -324,7 +323,7 @@ openai_harmony.HarmonyError: error downloading or loading vocab file
 
 **解決方案**: 
 - 確認已執行「前置準備」中的 tiktoken 下載步驟
-- 確認 Docker 指令包含 `-e TIKTOKEN_ENCODINGS_BASE=/etc/encodings` 和 `-v /vllm/encodings:/etc/encodings:ro`
+- 確認 Docker 指令包含 `-e TIKTOKEN_ENCODINGS_BASE=/etc/encodings` 和 `-v ~/vllm/encodings:/etc/encodings:ro`
 
 **參考**: https://github.com/vllm-project/vllm/issues/22525
 
